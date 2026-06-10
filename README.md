@@ -2,105 +2,96 @@
 
 Mini e-commerce backend for the Cloud Information Systems final project.
 
-The app is intentionally small because the evaluation focus is cloud engineering:
-Terraform, Docker, AWS networking, RDS, SQS, Ansible, GitHub Actions, IAM and
-deployment automation.
+The business domain is intentionally small. The goal is to demonstrate cloud
+engineering practices: AWS infrastructure, Terraform, Docker, RDS, SQS, Ansible,
+GitHub Actions, IAM and deployment automation.
 
-## Architecture
+## Services
 
-Services:
-
-- `catalog-service`: REST API for products, backed by PostgreSQL.
-- `order-service`: REST API for orders, backed by PostgreSQL. Publishes
+- `catalog-service`: product REST API backed by PostgreSQL.
+- `order-service`: order REST API backed by PostgreSQL. Publishes
   `ORDER_CREATED` events to SQS.
-- `notification-service`: consumes SQS messages and processes order
-  notifications.
+- `notification-service`: background worker that consumes SQS events and logs
+  notification processing.
 
-AWS target architecture:
+## AWS Architecture
 
 - Custom VPC with public and private subnets.
-- Public EC2 running Docker containers.
+- Public EC2 instance running the Dockerized services.
 - Private RDS PostgreSQL instance.
-- SQS queue with DLQ for order-created events.
-- IAM instance role scoped to SQS operations.
-- Terraform for infrastructure, Ansible for EC2 configuration, GitHub Actions for
-  CI/CD.
+- SQS queue with dead-letter queue for order-created events.
+- EC2 IAM role scoped to the SQS actions required by the application.
+- Terraform remote state stored in S3 with DynamoDB locking.
 
-## Local Demo
+See [docs/architecture.md](docs/architecture.md) for the architecture diagram and
+request flow.
 
-Requirements:
+## Project Documentation
 
-- Docker Desktop
-- JDK 21
-- Terraform and Ansible for the AWS phase
+- [Setup](docs/setup.md): local tools, AWS account preparation and Terraform
+  backend.
+- [Deployment](docs/deployment.md): manual AWS deployment and CI/CD notes.
+- [Demo](docs/demo.md): local and AWS demo commands.
+- [Security](docs/security.md): IAM, networking, secrets and repository hygiene.
+- [Decisions](docs/decisions.md): design choices and trade-offs.
+- [Limitations](docs/limitations.md): known limitations and possible
+  improvements.
+- [Evidence Checklist](docs/evidence.md): screenshots and proof to collect for
+  the defense.
+- [Final Checklist](docs/final-checklist.md): pre-submission checks.
 
-Start the full local stack:
+## Quick Local Run
 
 ```bash
 make up
-```
-
-Create a product and an order:
-
-```bash
 make demo-order
-```
-
-Watch the services:
-
-```bash
 make logs
 ```
 
-Stop local services:
+Stop the local stack:
 
 ```bash
 make down
 ```
 
-## AWS Setup Checklist
+## Quick AWS Checks
 
-Do this before `terraform apply`:
-
-1. Enable MFA on the AWS root account.
-2. Create a billing alarm.
-3. Pick one region, currently `eu-west-1`.
-4. Create a remote Terraform state S3 bucket with versioning, encryption and
-   public access blocked.
-5. Create a DynamoDB lock table with partition key `LockID` as string.
-6. Configure GitHub OIDC and add `AWS_ROLE_TO_ASSUME` as a repository secret.
-7. Create or choose an EC2 key pair.
-8. Copy `infra/envs/dev/backend.tf.example` to `infra/envs/dev/backend.tf` and
-   replace the placeholders.
-9. Copy `infra/envs/dev/terraform.tfvars.example` to
-   `infra/envs/dev/terraform.tfvars` and replace the placeholders.
-
-## Deploy Manually
+Get the current EC2 public IP from Terraform:
 
 ```bash
-cd infra/envs/dev
-terraform init
-terraform plan
-terraform apply
-terraform output
+terraform -chdir=infra/envs/dev output app_public_ip
 ```
 
-Create `ansible/inventory.ini` from the example using the EC2 public IP:
+Run health checks:
 
 ```bash
-cp ansible/inventory.ini.example ansible/inventory.ini
-ansible-playbook -i ansible/inventory.ini ansible/deploy.yml
+APP_PUBLIC_IP=$(terraform -chdir=infra/envs/dev output -raw app_public_ip)
+curl "http://$APP_PUBLIC_IP:8081/actuator/health"
+curl "http://$APP_PUBLIC_IP:8082/actuator/health"
+curl "http://$APP_PUBLIC_IP:8083/actuator/health"
 ```
+
+Do not hardcode the EC2 public IP in documentation or scripts. It can change if
+the instance is recreated.
 
 ## Mandatory Requirements Mapping
 
-- Cloud infrastructure: `infra/envs/dev` and Terraform modules.
-- Infrastructure as Code: Terraform modules under `infra/modules`.
-- Containerization: one Dockerfile per service and Docker Compose for local dev.
-- Distributed architecture: three Spring Boot services.
-- Event-driven communication: `order-service -> SQS -> notification-service`.
-- Persistence: PostgreSQL locally, RDS PostgreSQL in AWS.
-- Automation/config management: Ansible deploy playbook.
-- CI/CD: `.github/workflows/ci.yml` and `.github/workflows/deploy.yml`.
-- Security/permissions: IAM roles, no AWS keys in code, private RDS subnet,
-  restricted SSH CIDR.
+| Requirement | Where it is satisfied |
+| --- | --- |
+| Cloud infrastructure | `infra/envs/dev`, `infra/modules/vpc`, AWS VPC/subnets/security groups |
+| Infrastructure as Code | Terraform modules under `infra/modules` |
+| Containerization | Dockerfiles in each service and `docker-compose.yml` |
+| Distributed architecture | `catalog-service`, `order-service`, `notification-service` |
+| Event-driven communication | `order-service -> SQS -> notification-service` |
+| Persistence layer | PostgreSQL locally, RDS PostgreSQL in AWS |
+| Automation/config management | `ansible/deploy.yml` |
+| CI/CD pipeline | `.github/workflows/ci.yml`, `.github/workflows/deploy.yml` |
+| Security and permissions | IAM roles, private RDS, security groups, ignored secrets |
+
+## Cleanup After Evaluation
+
+Only after the defense/evaluation, destroy AWS resources to avoid ongoing costs:
+
+```bash
+terraform -chdir=infra/envs/dev destroy
+```
