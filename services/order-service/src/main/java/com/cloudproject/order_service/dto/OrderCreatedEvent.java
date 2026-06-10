@@ -1,4 +1,4 @@
-package com.cloudproject.notification_service.dto;
+package com.cloudproject.order_service.dto;
 
 import java.time.LocalDateTime;
 
@@ -39,25 +39,5 @@ public class OrderCreatedEvent {
 
     public LocalDateTime getCreatedAt() {
         return createdAt;
-    }
-
-    public void setEventType(String eventType) {
-        this.eventType = eventType;
-    }
-
-    public void setOrderId(Long orderId) {
-        this.orderId = orderId;
-    }
-
-    public void setProductId(Long productId) {
-        this.productId = productId;
-    }
-
-    public void setQuantity(Integer quantity) {
-        this.quantity = quantity;
-    }
-
-    public void setCreatedAt(LocalDateTime createdAt) {
-        this.createdAt = createdAt;
     }
 }

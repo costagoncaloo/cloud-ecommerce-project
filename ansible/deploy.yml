@@ -1,0 +1,64 @@
+- name: Configure and deploy cloud e-commerce services
+  hosts: app
+  become: true
+
+  tasks:
+    - name: Install Docker
+      ansible.builtin.dnf:
+        name: docker
+        state: present
+
+    - name: Enable and start Docker
+      ansible.builtin.systemd:
+        name: docker
+        enabled: true
+        state: started
+
+    - name: Add ec2-user to docker group
+      ansible.builtin.user:
+        name: ec2-user
+        groups: docker
+        append: true
+
+    - name: Create application directory
+      ansible.builtin.file:
+        path: /opt/cloud-ecommerce
+        state: directory
+        owner: ec2-user
+        group: ec2-user
+        mode: "0755"
+
+    - name: Copy Docker Compose file
+      ansible.builtin.template:
+        src: templates/docker-compose.aws.yml.j2
+        dest: /opt/cloud-ecommerce/docker-compose.yml
+        owner: ec2-user
+        group: ec2-user
+        mode: "0644"
+
+    - name: Reuse Terraform-generated environment for Compose interpolation
+      ansible.builtin.copy:
+        src: /opt/cloud-ecommerce/app.env
+        dest: /opt/cloud-ecommerce/.env
+        remote_src: true
+        owner: ec2-user
+        group: ec2-user
+        mode: "0600"
+
+    - name: Set image tag for this deployment
+      ansible.builtin.lineinfile:
+        path: /opt/cloud-ecommerce/.env
+        regexp: '^IMAGE_TAG='
+        line: "IMAGE_TAG={{ lookup('env', 'IMAGE_TAG') | default('latest', true) }}"
+
+    - name: Pull latest images
+      ansible.builtin.command:
+        cmd: docker compose pull
+        chdir: /opt/cloud-ecommerce
+      changed_when: true
+
+    - name: Start services
+      ansible.builtin.command:
+        cmd: docker compose up -d
+        chdir: /opt/cloud-ecommerce
+      changed_when: true
